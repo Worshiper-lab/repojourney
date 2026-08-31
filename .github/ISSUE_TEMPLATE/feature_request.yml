@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose an improvement to RepoJourney
+title: '[Feature]: '
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What code-understanding problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience
+      description: Describe the smallest useful version of the feature.
+    validations:
+      required: true

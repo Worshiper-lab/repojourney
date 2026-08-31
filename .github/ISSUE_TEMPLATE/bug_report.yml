@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible problem in RepoJourney
+title: '[Bug]: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve RepoJourney.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Describe the actual and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open...
+        2. Select...
+        3. See...
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, browser, and Node.js version.
+    validations:
+      required: true
