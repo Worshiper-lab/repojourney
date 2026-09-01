@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 type FlowKey = string;
 type FlowNode = {
@@ -244,6 +243,7 @@ export default function Home() {
   const [selectedNode, setSelectedNode] = useState('service');
   const [copied, setCopied] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState('');
   const [analysisError, setAnalysisError] = useState('');
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
   const flow = analysisFlows[activeFlow] ?? Object.values(analysisFlows)[0];
@@ -258,6 +258,7 @@ export default function Home() {
   const analyze = async () => {
     setAnalyzing(true);
     setAnalysisError('');
+    setAnalysisStatus('Downloading and indexing the repository…');
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -281,7 +282,11 @@ export default function Home() {
       setRepository(payload.repository);
       setActiveFlow(firstKey);
       setSelectedNode(nextFlows[firstKey].nodes[0].id);
+      setAnalysisStatus(
+        `Mapped ${payload.repository.fileCount} source files into ${payload.flows.length} journeys.`,
+      );
     } catch (error) {
+      setAnalysisStatus('');
       setAnalysisError(
         error instanceof Error ? error.message : 'Repository analysis failed.',
       );
@@ -374,41 +379,54 @@ export default function Home() {
             </div>
           </div>
         </div>
-        <div className="mb-5 flex flex-col gap-2 rounded-2xl border border-white/9 bg-card p-2 shadow-2xl shadow-black/15 sm:flex-row">
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
-            <GitFork className="size-4 shrink-0 text-muted-foreground" />
-            <Input
-              aria-label="GitHub repository URL"
-              value={repoUrl}
-              onChange={(event) => setRepoUrl(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !analyzing && repoUrl) void analyze();
-              }}
-              className="h-10 border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0 sm:text-sm"
-            />
-          </div>
-          <Button
-            size="lg"
-            onClick={analyze}
-            disabled={analyzing || !repoUrl}
-            className="h-10 bg-cyan-300 px-4 text-slate-950 hover:bg-cyan-200"
+        <div className="mb-5 space-y-2">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void analyze();
+            }}
+            className="flex flex-col gap-2 rounded-2xl border border-white/9 bg-card p-2 shadow-2xl shadow-black/15 sm:flex-row"
           >
-            {analyzing ? (
-              <Sparkles className="animate-pulse" data-icon="inline-start" />
-            ) : (
-              <Play data-icon="inline-start" />
-            )}
-            {analyzing ? 'Mapping repository…' : 'Analyze repository'}
-          </Button>
+            <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
+              <GitFork className="size-4 shrink-0 text-muted-foreground" />
+              <input
+                aria-label="GitHub repository URL"
+                value={repoUrl}
+                onChange={(event) => setRepoUrl(event.target.value)}
+                className="h-10 w-full min-w-0 border-0 bg-transparent px-1 font-mono text-xs outline-none placeholder:text-muted-foreground sm:text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              data-testid="analyze-repository"
+              disabled={analyzing || !repoUrl}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-cyan-300 px-4 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-cyan-300/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4"
+            >
+              {analyzing ? (
+                <Sparkles className="animate-pulse" />
+              ) : (
+                <Play />
+              )}
+              {analyzing ? 'Mapping repository…' : 'Analyze repository'}
+            </button>
+          </form>
+          {analysisStatus && (
+            <output
+              aria-live="polite"
+              className="block rounded-xl border border-cyan-300/20 bg-cyan-300/8 px-4 py-3 text-sm text-cyan-100"
+            >
+              {analysisStatus}
+            </output>
+          )}
+          {analysisError && (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-300/20 bg-red-300/8 px-4 py-3 text-sm text-red-200"
+            >
+              {analysisError}
+            </div>
+          )}
         </div>
-        {analysisError && (
-          <div
-            role="alert"
-            className="mb-5 rounded-xl border border-red-300/20 bg-red-300/8 px-4 py-3 text-sm text-red-200"
-          >
-            {analysisError}
-          </div>
-        )}
 
         <div className="grid overflow-hidden rounded-2xl border border-white/9 bg-card shadow-[0_30px_90px_rgba(0,0,0,0.24)] lg:grid-cols-[248px_minmax(0,1fr)_310px]">
           <aside className="border-b border-white/8 p-4 lg:border-b-0 lg:border-r">
