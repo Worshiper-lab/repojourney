@@ -128,6 +128,11 @@ async function collectFiles(root) {
 
 function classify(file) {
   const value = `${file.path}\n${file.content.slice(0, 12_000)}`.toLowerCase();
+  const path = file.path.toLowerCase();
+  if (/\b(schema|schemas|model|models|database|db|migrations|repositories)\b/.test(path)) return 'data';
+  if (/\b(api|routes|controllers|webhooks)\b/.test(path) || (path.startsWith('server/index.') && /createServer|\/api\//.test(file.content))) return 'api';
+  if (path.startsWith('server/') || /\b(services|domain|usecases|workflows)\b/.test(path)) return 'logic';
+  if (/\.(tsx|jsx|vue|svelte)$/.test(path) || path.startsWith('components/')) return 'ui';
   const scores = {
     ui: score(value, [
       [/\.(tsx|jsx|vue|svelte)\b/g, 4], [/\b(component|page|screen|view|widget|template)\b/g, 2],
@@ -147,6 +152,28 @@ function classify(file) {
     ]),
   };
   return Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function routeTokens(file) {
+  const tokens = new Set();
+  for (const match of file.content.matchAll(/['"`]((?:\/api\/)[A-Za-z0-9_./:-]+)['"`]/g)) {
+    tokens.add(match[1].replace(/\/+$/, ''));
+  }
+  return tokens;
+}
+
+function connectSharedRoutes(files, graph) {
+  const routes = new Map(files.map((file) => [file.path, routeTokens(file)]));
+  for (let index = 0; index < files.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < files.length; otherIndex += 1) {
+      const left = files[index];
+      const right = files[otherIndex];
+      const shared = [...routes.get(left.path)].some((route) => routes.get(right.path).has(route));
+      if (!shared) continue;
+      graph.get(left.path).push(right.path);
+      graph.get(right.path).push(left.path);
+    }
+  }
 }
 
 function score(value, rules) {
@@ -204,6 +231,16 @@ function titleFor(file, line) {
   return basename(file.path, extname(file.path)).replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function flowLabel(file) {
+  const path = file.path.toLowerCase();
+  if (/^(app|src\/app)\/page\./.test(path)) return 'Repository analyzer UI';
+  if (path.startsWith('server/index.')) return 'Analysis API';
+  if (/^server\/analy[sz]er\./.test(path)) return 'Source graph engine';
+  if (/(^|\/)main\.(tsx?|jsx?)$/.test(path)) return 'Application bootstrap';
+  if (/(^|\/)layout\.(tsx?|jsx?)$/.test(path)) return 'Application shell';
+  return titleFor(file, findEvidenceLine(file, file.kind));
+}
+
 function buildFlow(seed, index, files, graph, repository, branch) {
   const depthByPath = new Map([[seed.path, 0]]);
   const queue = [seed.path];
@@ -242,7 +279,7 @@ function buildFlow(seed, index, files, graph, repository, branch) {
       sourceUrl: `${repository.url}/blob/${encodeURIComponent(branch)}/${pathUrl}#L${line}`,
     };
   });
-  const label = titleFor(seed, findEvidenceLine(seed, seed.kind));
+  const label = flowLabel(seed);
   const promptByKind = {
     ui: `How does ${label} connect to the repository?`,
     api: `What happens when ${label} handles a request?`,
@@ -289,15 +326,26 @@ export async function analyzeRepository(input, options = {}) {
     for (const file of files) file.kind = classify(file);
     const knownPaths = new Set(files.map((file) => file.path));
     const graph = new Map(files.map((file) => [file.path, importsFor(file, knownPaths)]));
+    connectSharedRoutes(files, graph);
     const seedCandidates = [...files].sort((a, b) => {
-      const seedScore = (file) => (file.kind === 'ui' ? 8 : file.kind === 'api' ? 7 : 3) + (graph.get(file.path)?.length ?? 0) - file.path.split('/').length * 0.2;
+      const seedScore = (file) => {
+        const path = file.path.toLowerCase();
+        const primary = /^(app|src\/app)\/page\./.test(path) ? 24
+          : path.startsWith('server/index.') ? 22
+            : /^server\/analy[sz]er\./.test(path) ? 20
+              : file.kind === 'api' ? 12
+                : file.kind === 'ui' ? 10
+                  : 6;
+        const genericPenalty = path.startsWith('components/ui/') || /(^|\/)(layout|main|index)\.(tsx?|jsx?)$/.test(path) ? 9 : 0;
+        return primary + (graph.get(file.path)?.length ?? 0) - genericPenalty - file.path.split('/').length * 0.2;
+      };
       return seedScore(b) - seedScore(a);
     });
     const seeds = [];
     for (const candidate of seedCandidates) {
       if (seeds.length >= 3) break;
-      const label = titleFor(candidate, findEvidenceLine(candidate, candidate.kind));
-      if (!seeds.some((seed) => titleFor(seed, findEvidenceLine(seed, seed.kind)) === label)) seeds.push(candidate);
+      const label = flowLabel(candidate);
+      if (!seeds.some((seed) => flowLabel(seed) === label)) seeds.push(candidate);
     }
     const language = languageSummary(files);
     return {
