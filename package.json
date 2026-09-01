@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "vinext dev",
+    "postinstall": "node scripts/patch-vinext-webcrypto.mjs",
+    "prebuild": "node scripts/patch-vinext-webcrypto.mjs",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint app",
