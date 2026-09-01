@@ -10,10 +10,13 @@
     "postinstall": "node scripts/patch-vinext-webcrypto.mjs",
     "prebuild": "node scripts/patch-vinext-webcrypto.mjs",
     "build": "vinext build",
+    "dev:static": "vite --config vite.static.config.ts",
     "build:static": "vite build --config vite.static.config.ts",
     "preview:static": "vite preview --config vite.static.config.ts",
+    "start:api": "node server/index.mjs",
+    "test": "node --test server/*.test.mjs",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "lint": "oxlint app",
+    "lint": "oxlint app server",
     "format": "oxfmt"
   },
   "dependencies": {

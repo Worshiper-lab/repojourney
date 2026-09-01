@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-type FlowKey = 'booking' | 'login' | 'payment';
+type FlowKey = string;
 type FlowNode = {
   id: string;
   eyebrow: string;
@@ -34,12 +34,37 @@ type FlowNode = {
   line: number;
   detail: string;
   kind: 'ui' | 'api' | 'logic' | 'data';
+  sourceUrl?: string;
 };
 
-const flows: Record<
-  FlowKey,
-  { label: string; prompt: string; nodes: FlowNode[] }
-> = {
+type FlowDefinition = {
+  id?: string;
+  label: string;
+  prompt: string;
+  summary?: string;
+  confidence?: number;
+  nodes: FlowNode[];
+};
+
+type RepositoryInfo = {
+  owner: string;
+  name: string;
+  url: string;
+  branch: string;
+  fileCount: number;
+  language: string;
+  languagePercentage: number;
+  indexedAt: string;
+  truncated?: boolean;
+};
+
+type AnalyzeResponse = {
+  error?: string;
+  flows?: FlowDefinition[];
+  repository?: RepositoryInfo;
+};
+
+const sampleFlows: Record<FlowKey, FlowDefinition> = {
   booking: {
     label: 'Create booking',
     prompt: 'How does a customer create a service booking?',
@@ -212,24 +237,57 @@ const kindIcon = { ui: Layers3, api: ServerCog, logic: Braces, data: Database };
 
 export default function Home() {
   const [repoUrl, setRepoUrl] = useState(
-    'https://github.com/Worshiper-lab/xingyue-housekeeping-platform',
+    'https://github.com/Worshiper-lab/repojourney',
   );
+  const [analysisFlows, setAnalysisFlows] = useState(sampleFlows);
   const [activeFlow, setActiveFlow] = useState<FlowKey>('booking');
   const [selectedNode, setSelectedNode] = useState('service');
   const [copied, setCopied] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const flow = flows[activeFlow];
+  const [analysisError, setAnalysisError] = useState('');
+  const [repository, setRepository] = useState<RepositoryInfo | null>(null);
+  const flow = analysisFlows[activeFlow] ?? Object.values(analysisFlows)[0];
   const node = useMemo(
     () => flow.nodes.find((item) => item.id === selectedNode) ?? flow.nodes[0],
     [flow, selectedNode],
   );
   const selectFlow = (key: FlowKey) => {
     setActiveFlow(key);
-    setSelectedNode(flows[key].nodes[0].id);
+    setSelectedNode(analysisFlows[key].nodes[0].id);
   };
-  const analyze = () => {
+  const analyze = async () => {
     setAnalyzing(true);
-    window.setTimeout(() => setAnalyzing(false), 900);
+    setAnalysisError('');
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repositoryUrl: repoUrl }),
+      });
+      const payload = (await response.json()) as AnalyzeResponse;
+      if (!response.ok) throw new Error(payload.error || 'Repository analysis failed.');
+      if (!Array.isArray(payload.flows) || payload.flows.length === 0) {
+        throw new Error('No code journeys were detected in this repository.');
+      }
+      if (!payload.repository) throw new Error('Repository metadata is missing.');
+      const nextFlows = Object.fromEntries(
+        payload.flows.map((item: FlowDefinition, index: number) => [
+          item.id || `journey-${index + 1}`,
+          item,
+        ]),
+      );
+      const firstKey = Object.keys(nextFlows)[0];
+      setAnalysisFlows(nextFlows);
+      setRepository(payload.repository);
+      setActiveFlow(firstKey);
+      setSelectedNode(nextFlows[firstKey].nodes[0].id);
+    } catch (error) {
+      setAnalysisError(
+        error instanceof Error ? error.message : 'Repository analysis failed.',
+      );
+    } finally {
+      setAnalyzing(false);
+    }
   };
   const copyContext = async () => {
     const mermaid = `flowchart LR\n${flow.nodes.map((item, index) => `${String.fromCharCode(65 + index)}["${item.title}"]${index < flow.nodes.length - 1 ? ` --> ${String.fromCharCode(66 + index)}` : ''}`).join('\n')}`;
@@ -308,11 +366,11 @@ export default function Home() {
               variant="outline"
               className="border-amber-300/20 bg-amber-300/5 text-amber-200"
             >
-              Interactive sample
+              {repository ? 'Live repository analysis' : 'Interactive sample'}
             </Badge>
             <div className="flex items-center gap-2 rounded-xl border border-emerald-300/15 bg-emerald-300/6 px-3 py-2 text-xs text-emerald-200">
-              <LockKeyhole className="size-3.5" /> Read-only analysis · source
-              stays private
+              <LockKeyhole className="size-3.5" /> Public repositories only ·
+              temporary checkout
             </div>
           </div>
         </div>
@@ -323,6 +381,9 @@ export default function Home() {
               aria-label="GitHub repository URL"
               value={repoUrl}
               onChange={(event) => setRepoUrl(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !analyzing && repoUrl) void analyze();
+              }}
               className="h-10 border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0 sm:text-sm"
             />
           </div>
@@ -340,6 +401,14 @@ export default function Home() {
             {analyzing ? 'Mapping repository…' : 'Analyze repository'}
           </Button>
         </div>
+        {analysisError && (
+          <div
+            role="alert"
+            className="mb-5 rounded-xl border border-red-300/20 bg-red-300/8 px-4 py-3 text-sm text-red-200"
+          >
+            {analysisError}
+          </div>
+        )}
 
         <div className="grid overflow-hidden rounded-2xl border border-white/9 bg-card shadow-[0_30px_90px_rgba(0,0,0,0.24)] lg:grid-cols-[248px_minmax(0,1fr)_310px]">
           <aside className="border-b border-white/8 p-4 lg:border-b-0 lg:border-r">
@@ -351,11 +420,11 @@ export default function Home() {
                 variant="outline"
                 className="border-white/10 text-muted-foreground"
               >
-                3
+                {Object.keys(analysisFlows).length}
               </Badge>
             </div>
             <div className="grid gap-1 sm:grid-cols-3 lg:grid-cols-1">
-              {(Object.keys(flows) as FlowKey[]).map((key) => (
+              {Object.keys(analysisFlows).map((key) => (
                 <button
                   key={key}
                   type="button"
@@ -363,13 +432,13 @@ export default function Home() {
                   className={`group rounded-xl border px-3 py-3 text-left transition ${activeFlow === key ? 'border-cyan-300/25 bg-cyan-300/9' : 'border-transparent hover:border-white/8 hover:bg-white/[0.025]'}`}
                 >
                   <span className="flex items-center justify-between gap-2 text-sm font-medium">
-                    {flows[key].label}
+                    {analysisFlows[key].label}
                     <ChevronRight
                       className={`size-4 transition ${activeFlow === key ? 'text-cyan-300' : 'text-muted-foreground group-hover:translate-x-0.5'}`}
                     />
                   </span>
                   <span className="mt-1.5 block truncate text-[11px] text-muted-foreground">
-                    {flows[key].nodes.length} evidence nodes
+                    {analysisFlows[key].nodes.length} evidence nodes
                   </span>
                 </button>
               ))}
@@ -380,14 +449,20 @@ export default function Home() {
               </p>
               <div className="space-y-2 px-1 text-xs text-muted-foreground">
                 <p className="flex items-center gap-2">
-                  <GitBranch className="size-3.5" /> main · 128 files
+                  <GitBranch className="size-3.5" />{' '}
+                  {repository
+                    ? `${repository.branch} · ${repository.fileCount} files`
+                    : 'main · 128 files'}
                 </p>
                 <p className="flex items-center gap-2">
-                  <Code2 className="size-3.5" /> TypeScript · 84%
+                  <Code2 className="size-3.5" />{' '}
+                  {repository
+                    ? `${repository.language} · ${repository.languagePercentage}%`
+                    : 'TypeScript · 84%'}
                 </p>
                 <p className="flex items-center gap-2">
-                  <Check className="size-3.5 text-emerald-300" /> Indexed 18s
-                  ago
+                  <Check className="size-3.5 text-emerald-300" />{' '}
+                  {repository ? 'Indexed just now' : 'Sample data'}
                 </p>
               </div>
             </div>
@@ -404,7 +479,7 @@ export default function Home() {
                 </h2>
               </div>
               <Badge className="border-emerald-300/20 bg-emerald-300/8 text-emerald-200">
-                <Check /> 92% evidence coverage
+                <Check /> {flow.confidence ?? 92}% evidence coverage
               </Badge>
             </div>
             <div className="relative py-8">
@@ -456,10 +531,8 @@ export default function Home() {
                     Journey summary
                   </p>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    The request crosses {flow.nodes.length} verified code
-                    locations. Validation happens before domain rules, and
-                    persistence is isolated behind a dedicated data layer.
-                    Select any node to inspect its evidence.
+                    {flow.summary ??
+                      `The request crosses ${flow.nodes.length} evidence locations. Select any node to inspect its source.`}
                   </p>
                 </div>
               </div>
@@ -495,6 +568,10 @@ export default function Home() {
             </p>
             <button
               type="button"
+              onClick={() => {
+                const fallback = `${repoUrl.replace(/\/$/, '')}/blob/${repository?.branch ?? 'main'}/${node.file}#L${node.line}`;
+                window.open(node.sourceUrl ?? fallback, '_blank', 'noopener,noreferrer');
+              }}
               className="mt-5 w-full rounded-xl border border-white/8 bg-card p-3 text-left transition hover:border-cyan-300/25"
             >
               <p className="break-all font-mono text-[11px] leading-5 text-cyan-200">
@@ -515,7 +592,7 @@ export default function Home() {
                 </p>
                 <p className="flex gap-2">
                   <GitBranch className="mt-0.5 size-3.5 shrink-0 text-violet-300" />{' '}
-                  Connected by imports, calls, and route bindings.
+                  Ranked by imports, source structure, and naming signals.
                 </p>
               </div>
             </div>

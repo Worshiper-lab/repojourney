@@ -19,15 +19,17 @@ Every journey node points back to a source file and line so the explanation rema
 
 ## Current alpha
 
-The current release is an interactive product alpha built around a realistic TypeScript full-stack repository:
+The current release can analyze public GitHub repositories with a bounded, read-only heuristic engine:
 
-- switch between three end-to-end user journeys;
+- clone a public repository into a temporary directory;
+- index supported source files with strict file, byte, and time limits;
+- rank up to three code journeys using imports, source structure, and naming signals;
 - inspect UI, API, domain, and database evidence nodes;
-- explore source-oriented explanations;
+- open every evidence node at its GitHub file and line;
 - export the selected journey as Mermaid context;
-- experience the complete responsive product interface.
+- show honest coverage scores and explain heuristic connections.
 
-Repository ingestion and automatic static analysis are the next implementation milestone. The alpha deliberately uses a transparent sample dataset while that engine is developed.
+This is intentionally an MVP rather than semantic AI code understanding. Large repositories are sampled, private repositories are rejected, and inferred relationships are labeled as heuristics.
 
 ## Quick start
 
@@ -35,10 +37,16 @@ Repository ingestion and automatic static analysis are the next implementation m
 git clone https://github.com/Worshiper-lab/repojourney.git
 cd repojourney
 npm install
-npm run dev
+npm run start:api
 ```
 
-Then open `http://localhost:3000`.
+In a second terminal:
+
+```bash
+npm run dev:static
+```
+
+Then open the local URL printed by Vite.
 
 ## Product principles
 
@@ -54,8 +62,8 @@ Then open `http://localhost:3000`.
 - [x] Evidence detail panel
 - [x] Mermaid context export
 - [x] Responsive product shell
-- [ ] GitHub repository ingestion
-- [ ] TypeScript import and route graph
+- [x] Public GitHub repository ingestion
+- [x] Local import and source-signal graph
 - [ ] Evidence-linked natural-language questions
 - [ ] Change-impact and related-test suggestions
 - [ ] Local repository CLI
