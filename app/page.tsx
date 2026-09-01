@@ -45,24 +45,6 @@ type FlowDefinition = {
   nodes: FlowNode[];
 };
 
-type RepositoryInfo = {
-  owner: string;
-  name: string;
-  url: string;
-  branch: string;
-  fileCount: number;
-  language: string;
-  languagePercentage: number;
-  indexedAt: string;
-  truncated?: boolean;
-};
-
-type AnalyzeResponse = {
-  error?: string;
-  flows?: FlowDefinition[];
-  repository?: RepositoryInfo;
-};
-
 const sampleFlows: Record<FlowKey, FlowDefinition> = {
   booking: {
     label: 'Create booking',
@@ -238,14 +220,10 @@ export default function Home() {
   const [repoUrl, setRepoUrl] = useState(
     'https://github.com/Worshiper-lab/repojourney',
   );
-  const [analysisFlows, setAnalysisFlows] = useState(sampleFlows);
+  const analysisFlows = sampleFlows;
   const [activeFlow, setActiveFlow] = useState<FlowKey>('booking');
   const [selectedNode, setSelectedNode] = useState('service');
   const [copied, setCopied] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisStatus, setAnalysisStatus] = useState('');
-  const [analysisError, setAnalysisError] = useState('');
-  const [repository, setRepository] = useState<RepositoryInfo | null>(null);
   const flow = analysisFlows[activeFlow] ?? Object.values(analysisFlows)[0];
   const node = useMemo(
     () => flow.nodes.find((item) => item.id === selectedNode) ?? flow.nodes[0],
@@ -254,45 +232,6 @@ export default function Home() {
   const selectFlow = (key: FlowKey) => {
     setActiveFlow(key);
     setSelectedNode(analysisFlows[key].nodes[0].id);
-  };
-  const analyze = async () => {
-    setAnalyzing(true);
-    setAnalysisError('');
-    setAnalysisStatus('Downloading and indexing the repository…');
-    try {
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repositoryUrl: repoUrl }),
-      });
-      const payload = (await response.json()) as AnalyzeResponse;
-      if (!response.ok) throw new Error(payload.error || 'Repository analysis failed.');
-      if (!Array.isArray(payload.flows) || payload.flows.length === 0) {
-        throw new Error('No code journeys were detected in this repository.');
-      }
-      if (!payload.repository) throw new Error('Repository metadata is missing.');
-      const nextFlows = Object.fromEntries(
-        payload.flows.map((item: FlowDefinition, index: number) => [
-          item.id || `journey-${index + 1}`,
-          item,
-        ]),
-      );
-      const firstKey = Object.keys(nextFlows)[0];
-      setAnalysisFlows(nextFlows);
-      setRepository(payload.repository);
-      setActiveFlow(firstKey);
-      setSelectedNode(nextFlows[firstKey].nodes[0].id);
-      setAnalysisStatus(
-        `Mapped ${payload.repository.fileCount} source files into ${payload.flows.length} journeys.`,
-      );
-    } catch (error) {
-      setAnalysisStatus('');
-      setAnalysisError(
-        error instanceof Error ? error.message : 'Repository analysis failed.',
-      );
-    } finally {
-      setAnalyzing(false);
-    }
   };
   const copyContext = async () => {
     const mermaid = `flowchart LR\n${flow.nodes.map((item, index) => `${String.fromCharCode(65 + index)}["${item.title}"]${index < flow.nodes.length - 1 ? ` --> ${String.fromCharCode(66 + index)}` : ''}`).join('\n')}`;
@@ -371,7 +310,7 @@ export default function Home() {
               variant="outline"
               className="border-amber-300/20 bg-amber-300/5 text-amber-200"
             >
-              {repository ? 'Live repository analysis' : 'Interactive sample'}
+              Server-rendered analysis
             </Badge>
             <div className="flex items-center gap-2 rounded-xl border border-emerald-300/15 bg-emerald-300/6 px-3 py-2 text-xs text-emerald-200">
               <LockKeyhole className="size-3.5" /> Public repositories only ·
@@ -381,16 +320,15 @@ export default function Home() {
         </div>
         <div className="mb-5 space-y-2">
           <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void analyze();
-            }}
+            action="/analyze"
+            method="get"
             className="flex flex-col gap-2 rounded-2xl border border-white/9 bg-card p-2 shadow-2xl shadow-black/15 sm:flex-row"
           >
             <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
               <GitFork className="size-4 shrink-0 text-muted-foreground" />
               <input
                 aria-label="GitHub repository URL"
+                name="repositoryUrl"
                 value={repoUrl}
                 onChange={(event) => setRepoUrl(event.target.value)}
                 className="h-10 w-full min-w-0 border-0 bg-transparent px-1 font-mono text-xs outline-none placeholder:text-muted-foreground sm:text-sm"
@@ -399,33 +337,13 @@ export default function Home() {
             <button
               type="submit"
               data-testid="analyze-repository"
-              disabled={analyzing || !repoUrl}
+              disabled={!repoUrl}
               className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-cyan-300 px-4 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-cyan-300/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4"
             >
-              {analyzing ? (
-                <Sparkles className="animate-pulse" />
-              ) : (
-                <Play />
-              )}
-              {analyzing ? 'Mapping repository…' : 'Analyze repository'}
+              <Play />
+              Analyze repository
             </button>
           </form>
-          {analysisStatus && (
-            <output
-              aria-live="polite"
-              className="block rounded-xl border border-cyan-300/20 bg-cyan-300/8 px-4 py-3 text-sm text-cyan-100"
-            >
-              {analysisStatus}
-            </output>
-          )}
-          {analysisError && (
-            <div
-              role="alert"
-              className="rounded-xl border border-red-300/20 bg-red-300/8 px-4 py-3 text-sm text-red-200"
-            >
-              {analysisError}
-            </div>
-          )}
         </div>
 
         <div className="grid overflow-hidden rounded-2xl border border-white/9 bg-card shadow-[0_30px_90px_rgba(0,0,0,0.24)] lg:grid-cols-[248px_minmax(0,1fr)_310px]">
@@ -468,19 +386,15 @@ export default function Home() {
               <div className="space-y-2 px-1 text-xs text-muted-foreground">
                 <p className="flex items-center gap-2">
                   <GitBranch className="size-3.5" />{' '}
-                  {repository
-                    ? `${repository.branch} · ${repository.fileCount} files`
-                    : 'main · 128 files'}
+                  main · sample repository
                 </p>
                 <p className="flex items-center gap-2">
                   <Code2 className="size-3.5" />{' '}
-                  {repository
-                    ? `${repository.language} · ${repository.languagePercentage}%`
-                    : 'TypeScript · 84%'}
+                  TypeScript · sample data
                 </p>
                 <p className="flex items-center gap-2">
                   <Check className="size-3.5 text-emerald-300" />{' '}
-                  {repository ? 'Indexed just now' : 'Sample data'}
+                  Submit above for live results
                 </p>
               </div>
             </div>
@@ -587,7 +501,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => {
-                const fallback = `${repoUrl.replace(/\/$/, '')}/blob/${repository?.branch ?? 'main'}/${node.file}#L${node.line}`;
+                const fallback = `${repoUrl.replace(/\/$/, '')}/blob/main/${node.file}#L${node.line}`;
                 window.open(node.sourceUrl ?? fallback, '_blank', 'noopener,noreferrer');
               }}
               className="mt-5 w-full rounded-xl border border-white/8 bg-card p-3 text-left transition hover:border-cyan-300/25"
